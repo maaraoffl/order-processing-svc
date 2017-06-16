@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.opensource.api.order.model.Order;
 import com.opensource.api.order.model.OrderRequest;
 import com.opensource.api.order.service.dao.OrderProcessingDao;
+import com.opensource.api.order.service.util.ZookeeperUtil;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -11,6 +12,8 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.beans.factory.annotation.Value;
 
+import javax.annotation.PostConstruct;
+import javax.inject.Inject;
 import javax.inject.Named;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,7 +28,7 @@ import java.util.Properties;
 @Named
 public class OrderProcessingDaoImpl implements OrderProcessingDao{
 
-    @Value("${order.process.topic.brokers}")
+//    @Value("${order.process.topic.brokers}")
     private String orderProcessTopicBrokers;
 
     @Value("${order.process.topic.name}")
@@ -34,11 +37,24 @@ public class OrderProcessingDaoImpl implements OrderProcessingDao{
     @Value("${order.process.consumer.group}")
     private String orderProcessConsumerGroup;
 
-    @Value("${order.delivery.topic.brokers}")
+//    @Value("${order.delivery.topic.brokers}")
     private String orderDeliveryTopicBrokers;
 
     @Value("${order.delivery.topic.name}")
     private String orderDeliveryTopicName;
+
+    @Value("${zookeeper.address}")
+    private String zooKeeperAddress;
+
+    @Inject
+    private ZookeeperUtil zookeeperUtil;
+
+    @PostConstruct
+    public void postConstruct() throws Exception{
+        String brokers=zookeeperUtil.getBrokers(zooKeeperAddress);
+        orderProcessTopicBrokers=brokers;
+        orderDeliveryTopicBrokers=brokers;
+    }
 
     @Override
     public void processOrderRequestFromTopic() {
@@ -79,6 +95,7 @@ public class OrderProcessingDaoImpl implements OrderProcessingDao{
             try {
                 Thread.sleep(100);
                 Order order = new Order();
+                order.setId(orderRequest.getId());
                 order.setName(orderRequest.getName());
                 order.setCount(orderRequest.getCount());
                 order.setStatus("COMPLETED");
@@ -105,9 +122,10 @@ public class OrderProcessingDaoImpl implements OrderProcessingDao{
             ProducerRecord<String, String> record = new ProducerRecord<String, String>(orderDeliveryTopicName, key, orderAsJsonString);
             myProducer.send(record, (metadata, exception) -> {
                 if(exception !=null)
-                    System.out.println(exception.getMessage());
+                    System.out.println("Message not delivered: " + exception.getMessage());
                 else
-                    System.out.println(metadata.topic() + ":" + metadata.offset());
+                    System.out.println("Message delivered: " + metadata.topic() + ":" + metadata.offset());
+
             });
         }
         catch (Exception e){
